@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/gazette/__init__.py
+src/gazette/collecte.py
+src/la_gazette.egg-info/PKG-INFO
+src/la_gazette.egg-info/SOURCES.txt
+src/la_gazette.egg-info/dependency_links.txt
+src/la_gazette.egg-info/top_level.txt
+tests/test_collecte.py

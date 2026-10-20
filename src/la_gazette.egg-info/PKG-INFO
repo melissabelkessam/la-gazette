@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: la-gazette
+Version: 0.1.0
+Summary: Pipeline qui lit la presse chaque matin et publie l'édition de 7 h
+Requires-Python: >=3.12

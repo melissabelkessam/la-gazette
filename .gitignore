@@ -1,0 +1,13 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Données collectées : jamais dans le dépôt (projet non publié)
+data/
+
+# Fichiers système
+.DS_Store
+Thumbs.db

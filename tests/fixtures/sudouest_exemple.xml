@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:dc="http://purl.org/dc/elements/1.1/"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>L'essentiel</title>
+    <link>https://www.sudouest.fr/essentiel/</link>
+    <description>Flux d'exemple pour les tests (articles inventés)</description>
+    <language>fr-FR</language>
+    <lastBuildDate>Tue, 20 Oct 2026 14:16:40 +0200</lastBuildDate>
+
+    <!-- Article 1 : cas normal, comme Sud Ouest -->
+    <item>
+      <title>Bordeaux : un nouveau pont ouvre à la circulation</title>
+      <description>La métropole inaugure ce mardi un ouvrage attendu depuis dix ans.</description>
+      <pubDate>Tue, 20 Oct 2026 13:58:29 +0200</pubDate>
+      <link>https://www.sudouest.fr/gironde/bordeaux/nouveau-pont-ouvre-123.php</link>
+      <guid isPermaLink="true">https://www.sudouest.fr/gironde/bordeaux/nouveau-pont-ouvre-123.php</guid>
+      <category>Gironde</category>
+      <media:content url="https://media.sudouest.fr/123/image.jpg" type="image/jpeg" medium="image"/>
+    </item>
+
+    <!-- Article 2 : les pièges (utm, auteur avec e-mail, texte intégral) -->
+    <item>
+      <title>Rugby : le club local se qualifie pour la finale</title>
+      <description>Victoire nette samedi soir devant un stade comble.</description>
+      <content:encoded><![CDATA[<p>Texte intégral de l'article, qu'on ne doit JAMAIS garder.</p>]]></content:encoded>
+      <pubDate>Mon, 19 Oct 2026 21:10:00 +0200</pubDate>
+      <link>https://www.sudouest.fr/sport/rugby/qualification-finale-456.php?utm_source=fluxrss&amp;utm_medium=rss</link>
+      <guid isPermaLink="false">https://www.sudouest.fr/sport/rugby/qualification-finale-456.php?utm_source=fluxrss&amp;utm_medium=rss</guid>
+      <author>j.dupont@exemple.fr (Jeanne Dupont)</author>
+      <dc:creator>Jeanne Dupont</dc:creator>
+      <category>Rugby</category>
+      <enclosure url="https://media.sudouest.fr/456/image.jpg" type="image/jpeg" length="0"/>
+    </item>
+
+    <!-- Article 3 : sans extrait, date en GMT -->
+    <item>
+      <title>Météo : un week-end ensoleillé sur la côte</title>
+      <pubDate>Tue, 20 Oct 2026 05:19:00 GMT</pubDate>
+      <link>https://www.sudouest.fr/meteo/week-end-ensoleille-789.php</link>
+      <guid isPermaLink="true">https://www.sudouest.fr/meteo/week-end-ensoleille-789.php</guid>
+    </item>
+  </channel>
+</rss>
