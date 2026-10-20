@@ -52,25 +52,7 @@ Pièges repérés en ouvrant les flux : fuseaux horaires différents (`GMT`, `+0
 
 ## 5. Architecture
 
-```mermaid
-flowchart TD
-    S[sources.csv] --> C["1. Collecte RSS<br/>httpx + feedparser<br/>toutes les heures, Ouest-France toutes les 10 min"]
-    C -->|items filtrés| B["2. Stockage brut<br/>fichiers Parquet"]
-    B -->|articles bruts| N["3. Nettoyage et qualité<br/>règles + rapport"]
-    N -->|articles propres| P[(PostgreSQL)]
-    P --> T["4. Thèmes<br/>BERTopic"]
-    T -->|thèmes du jour| L["5. Livraison<br/>édition de 7 h, archivée"]
-    O(["Prefect : planification, reprises, historique"]) -.-> C
-    O -.-> N
-    O -.-> T
-    O -.-> L
-    L -->|bulletin du matin| D[Discord]
-    M["6. Supervision<br/>Prometheus, Grafana, Alertmanager, watchdog"] -.->|observe| P
-    M -->|alertes| D
-    L -->|signal début / fin| H["Healthchecks.io<br/>(hors de notre machine)"]
-    M -->|signal toutes les 15 min| H
-    H -->|alerte si silence, en direct| D
-```
+![alt text](gazette_workflow_2_(1)-1.jpg)
 
 **Où ça tourne :** tout tourne dans des conteneurs Docker décrits par `docker-compose`, sur nos machines jusqu'au TD 4 ou 6, puis sur l'infrastructure fournie. Seuls Healthchecks.io et Discord sont hors de notre infrastructure, volontairement (section 9.3).
 
