@@ -1,8 +1,8 @@
 # La gazette - Document de cadrage
 
 Projet M2Ops - M2 Data Engineering & IA - Efrei - 2026-2027 - Groupe M2-DE3
-Équipe : Mélissa, Salma, Jason, Amelia - Dépôt Git : _à compléter_
-Version : 1.1 - 20 octobre 2026 (TD 1, après retours de l'enseignant)
+Équipe : Mélissa BELKESSAM, Salma DISSI, Jason MAMPOUYA , Amelia BOUKRI 
+Version : 1.1 - 20 octobre 2026 
 
 ---
 
