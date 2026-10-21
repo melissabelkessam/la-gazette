@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Lance tout l'environnement de dev : Postgres, Prefect et une collecte de Sud Ouest.
+# Seul prérequis : Docker.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+docker compose up --build "$@"

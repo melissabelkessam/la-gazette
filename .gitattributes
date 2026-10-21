@@ -1,0 +1,6 @@
+# Fins de ligne Linux pour les scripts, sinon ils plantent dans Docker et dans la CI
+* text=auto
+bin/dev text eol=lf
+bin/test text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf

@@ -1,0 +1,42 @@
+# Environnement de développement de La gazette (infrastructure décrite en code).
+# Lancer : bin/dev   (ou : docker compose up --build)
+# Les mots de passe ci-dessous servent uniquement en local, jamais en production.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gazette
+      POSTGRES_USER: gazette
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gazette_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gazette -d gazette"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  prefect:
+    image: prefecthq/prefect:3-latest
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+
+  collecte:
+    build: .
+    image: la-gazette:dev
+    command: ["--source", "Sud Ouest"]
+    environment:
+      DATABASE_URL: postgresql://gazette:${POSTGRES_PASSWORD:-gazette_dev}@postgres:5432/gazette
+      PREFECT_API_URL: http://prefect:4200/api
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

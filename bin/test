@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Lance le lint (ruff) puis les tests (pytest) dans un conteneur Python.
+# Seul prérequis : Docker. Les mêmes vérifications tournent dans la CI.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export MSYS_NO_PATHCONV=1   # évite que Git Bash (Windows) transforme les chemins
+docker run --rm -v "$(pwd -W 2>/dev/null || pwd):/app" -w /app python:3.13-slim \
+  sh -c "pip install --quiet --no-cache-dir -r requirements-dev.txt && ruff check . && pytest"
