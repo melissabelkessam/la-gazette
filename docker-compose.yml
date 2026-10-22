@@ -45,8 +45,13 @@ services:
       DATABASE_URL: postgresql://gazette:${POSTGRES_PASSWORD:-gazette_dev}@postgres:5432/gazette
       PREFECT_API_URL: http://prefect:4200/api
       GAZETTE_DOSSIER_BRUT: /app/data/articles_bruts
+      # TD 4 : rapports de qualité (écrits sur la machine, dossier rapports/)
+      GAZETTE_RAPPORTS_DIR: /app/rapports
+      # TD 4 : alertes de qualité. L'URL vient du fichier .env (ignoré par Git).
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     volumes:
       - ./data:/app/data
+      - ./rapports:/app/rapports
     depends_on:
       postgres:
         condition: service_healthy
