@@ -63,6 +63,7 @@ Voir [CONTRIBUTING.md](CONTRIBUTING.md) : une branche par sujet, une pull reques
 
 - [Cadrage](docs/cadrage.md)
 - [Stratégie CI/CD](docs/ci-cd.md)
+-[Schéma d'architecture](docs/architecture.jpg)
 
 ## Bornage
 
