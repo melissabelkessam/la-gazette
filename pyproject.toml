@@ -19,3 +19,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+
+[tool.setuptools.package-data]
+gazette = ["migrations/*.sql"]

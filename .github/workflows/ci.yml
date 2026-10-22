@@ -16,6 +16,21 @@ permissions:
 jobs:
   lint-et-tests:
     runs-on: ubuntu-latest
+    # Une vraie base PostgreSQL pour les tests de migrations et de la table sources
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gazette_test
+          POSTGRES_USER: gazette
+          POSTGRES_PASSWORD: gazette_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gazette -d gazette_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      GAZETTE_TEST_DATABASE_URL: postgresql://gazette:gazette_test@localhost:5432/gazette_test
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4

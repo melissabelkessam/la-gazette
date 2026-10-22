@@ -14,7 +14,9 @@ RUN useradd --create-home --uid 1000 gazette
 WORKDIR /app
 COPY --from=construction /install /usr/local
 COPY sources.csv ./
-RUN mkdir -p /app/data && chown gazette:gazette /app/data
+RUN mkdir -p /app/data/articles_bruts && chown -R gazette:gazette /app/data
 USER gazette
-ENTRYPOINT ["python", "-m", "gazette.collecte"]
-CMD ["--source", "Sud Ouest"]
+# Par défaut : l'orchestrateur Prefect (collecte toutes les 10 min).
+# Un passage à la main : docker compose run --rm orchestrateur gazette.collecteur
+ENTRYPOINT ["python", "-m"]
+CMD ["gazette.orchestration"]

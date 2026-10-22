@@ -1,10 +1,11 @@
-# Environnement de développement de La gazette (infrastructure décrite en code).
-# Lancer : bin/dev   (ou : docker compose up --build)
+# Environnement de La gazette (infrastructure décrite en code).
+# Lancer : bin/dev   (ou : docker compose up --build -d)
 # Les mots de passe ci-dessous servent uniquement en local, jamais en production.
 
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: gazette
       POSTGRES_USER: gazette
@@ -19,24 +20,40 @@ services:
       timeout: 3s
       retries: 10
 
+  # Le serveur Prefect : historique des runs et interface sur http://localhost:4200
   prefect:
-    image: prefecthq/prefect:3-latest
+    image: prefecthq/prefect:3.4.25-python3.12
+    restart: unless-stopped
     command: prefect server start --host 0.0.0.0
     ports:
       - "4200:4200"
+    volumes:
+      - prefect_data:/root/.prefect
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
-  collecte:
+  # Le flow « collecte », planifié toutes les 10 min (gazette/orchestration.py)
+  orchestrateur:
     build: .
     image: la-gazette:dev
-    command: ["--source", "Sud Ouest"]
+    restart: unless-stopped
+    command: ["gazette.orchestration"]
     environment:
       DATABASE_URL: postgresql://gazette:${POSTGRES_PASSWORD:-gazette_dev}@postgres:5432/gazette
       PREFECT_API_URL: http://prefect:4200/api
+      GAZETTE_DOSSIER_BRUT: /app/data/articles_bruts
     volumes:
       - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
+      prefect:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  prefect_data:
