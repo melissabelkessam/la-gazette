@@ -22,7 +22,7 @@ def lire_articles() -> list[dict]:
 
 
 def test_lit_les_trois_articles():
-    assert len(lire_articles()) == 4
+    assert len(lire_articles()) == 3
 
 
 def test_article_normal():
