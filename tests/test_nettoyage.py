@@ -122,7 +122,7 @@ def conn():
 
     connexion = ouvrir_connexion(URL_TEST)
     with connexion.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS controles_qualite, rejets, articles_propres")
+        cur.execute("DROP TABLE IF EXISTS controles_qualite, rejets, articles_propres CASCADE")
         for fichier in sorted(MIGRATIONS.glob("00[345]_*.sql")):
             cur.execute(fichier.read_text(encoding="utf-8"))
     connexion.commit()

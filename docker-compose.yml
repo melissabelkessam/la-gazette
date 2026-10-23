@@ -35,6 +35,24 @@ services:
       timeout: 5s
       retries: 12
 
+  # TD 5 : serveur MLflow, historique des runs de thèmes sur http://localhost:5000
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/mlflow.Dockerfile
+    image: la-gazette-mlflow:dev
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   # Le flow « collecte », planifié toutes les 10 min (gazette/orchestration.py)
   orchestrateur:
     build: .
@@ -49,15 +67,28 @@ services:
       GAZETTE_RAPPORTS_DIR: /app/rapports
       # TD 4 : alertes de qualité. L'URL vient du fichier .env (ignoré par Git).
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      # TD 5 : suivi des runs de thèmes. Si MLflow est en panne, le run continue
+      # (tracé dans runs_themes) : peu de réessais, délai court.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_HTTP_REQUEST_MAX_RETRIES: "2"
+      MLFLOW_HTTP_REQUEST_TIMEOUT: "20"
     volumes:
       - ./data:/app/data
       - ./rapports:/app/rapports
+      # TD 5 : paramètres lus à chaque run, modifiables sans reconstruire l'image
+      - ./config:/app/config:ro
+      - modeles:/app/modeles
     depends_on:
       postgres:
         condition: service_healthy
       prefect:
         condition: service_healthy
+      # service_started et non service_healthy : la collecte ne doit pas attendre MLflow
+      mlflow:
+        condition: service_started
 
 volumes:
   postgres_data:
   prefect_data:
+  mlflow_data:
+  modeles:

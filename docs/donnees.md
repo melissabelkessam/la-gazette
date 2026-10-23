@@ -67,3 +67,35 @@ Exemple :
 SELECT item_id, source, titre, lien FROM articles_propres WHERE item_id = '<item_id>';
 SELECT regle, detail, doublon_de FROM rejets WHERE item_id = '<item_id>';
 ```
+## Tables ajoutées au TD 5 (couche Gold) - migration 006
+
+### embeddings
+
+Cache des vecteurs. Clé : (`item_id`, `modele`, `modele_version`) : un article n'est vectorisé
+qu'une fois par version de modèle. `vecteur` (REAL[], 384 valeurs), `cree_le`. Supprimé avec
+l'article propre (`ON DELETE CASCADE`).
+
+### runs_themes
+
+Un run de regroupement = une ligne : `run_id` (clé, partagé avec MLflow), `mlflow_run_id`,
+`debut`, `fin`, `statut` (`en_cours`, `ok`, `trop_peu_articles`, `echec`), `fenetre_debut`,
+`fenetre_fin`, `nb_articles`, `hash_entree` (SHA-256 des articles en entrée), `modele`,
+`modele_version`, `hash_config`, `parametres` (JSON du fichier `config/clustering.yaml`),
+`metriques` (JSON), `erreur`.
+
+### themes
+
+(`run_id`, `theme`) clé ; `nom` (3 premiers mots-clés), `mots_cles` (TEXT[]), `taille`.
+
+### articles_themes
+
+(`run_id`, `item_id`) clé ; `theme`. Les articles classés en bruit par HDBSCAN ne sont pas
+rattachés.
+
+### Vue themes_du_jour
+
+Les thèmes du dernier run `ok`, triés par taille, avec `calcule_le`.
+
+Aucune nouvelle donnée de presse n'est stockée : les thèmes sont calculés à partir des
+champs déjà présents dans `articles_propres`. Les artefacts MLflow (`affectations.json`)
+contiennent des `item_id` et des sources, pas de titres.

@@ -13,7 +13,7 @@ Projet M2Ops · M2 Data Engineering & IA · Efrei · 2026-2027 · Mélissa, Salm
 | 2 | Socle : dépôt, Docker, première CI | ✅ |
 | 3 | **Collecte** : toutes les sources, toutes les 10 min, sans doublon, avec reprise et mise en sommeil | ✅ |
 | 4 | **Nettoyage et qualité** : normalisation, 10 règles d'exclusion, tables `articles_propres` et `rejets`, rapport quotidien, contrôles et alerte Discord | ✅ |
-| 5 | **Thèmes** : embeddings, regroupement, nommage, chaque run tracé (MLOps 1) | en cours |
+| 5 | **Thèmes** : embeddings en cache, BERTopic, nommage par mots-clés, chaque run tracé (MLflow + table `runs_themes`) | ✅ code prêt, à valider sur les données réelles |
 | 6 | Évaluer, versionner, déployer le modèle (MLOps 2) | à venir |
 | 7 | Édition de 7 h, journal de bord | à venir |
 | 8 | Supervision et alertes (Prometheus, Grafana, Healthchecks) | à venir |
@@ -35,6 +35,9 @@ sources.csv
    |
    v
 4. CONTRÔLES     vérifie des faits sur les données                        -> table controles_qualite + alerte Discord si un fait est faux
+   |
+   v
+5. THÈMES        au plus 1 fois par heure : vecteurs, BERTopic, noms      -> tables themes, articles_themes, runs_themes + MLflow
 ```
 
 Prefect lance cette chaîne. Si un journal ne répond pas, la collecte réessaie ; après 3 échecs de suite, la source est mise en sommeil. Tout est noté dans PostgreSQL.
@@ -48,7 +51,7 @@ Prefect lance cette chaîne. Si un journal ne répond pas, la collecte réessaie
 | Récupérer le travail des autres (pull, branches, fusion) | 11 |
 | Comprendre la collecte | 5 |
 | Comprendre le nettoyage et la qualité (TD 4) | 6 |
-| Faire le TD 5 | 13 |
+| Comprendre les thèmes (TD 5) | 13 et [docs/mlops.md](docs/mlops.md) |
 | Résoudre un problème | 9 |
 
 ## 1. Prérequis
@@ -97,25 +100,26 @@ docker compose up --build -d
 
 Ou avec le raccourci : `bin/dev` (Linux / Mac), `.\bin\dev.ps1` (Windows PowerShell ; si Windows bloque le script : `Unblock-File bin\*.ps1`).
 
-La **première fois**, la construction prend de 3 à 40 minutes selon le réseau (téléchargement des images et installation des dépendances). Les fois suivantes, quelques secondes, grâce au cache Docker. Si le code Python a changé (après un `git pull` par exemple), relancez `docker compose up --build -d` : le code est copié dans l'image, il n'est pas lu en direct.
+La **première fois**, la construction prend de 3 à 40 minutes (depuis le TD 5, l'image contient torch en version CPU, environ 1 Go de plus ; au premier run des thèmes, le modèle d'embeddings, environ 470 Mo, est téléchargé une seule fois dans le volume `modeles`) selon le réseau (téléchargement des images et installation des dépendances). Les fois suivantes, quelques secondes, grâce au cache Docker. Si le code Python a changé (après un `git pull` par exemple), relancez `docker compose up --build -d` : le code est copié dans l'image, il n'est pas lu en direct.
 
-`docker compose up` démarre 3 conteneurs :
+`docker compose up` démarre 4 conteneurs :
 
 | Service | Rôle | Adresse |
 |---|---|---|
-| `postgres` | Base de données : état des sources, journal des collectes, articles propres, rejets, contrôles (plus tard, thèmes) | interne à Docker (non exposée sur la machine) |
+| `postgres` | Base de données : état des sources, journal des collectes, articles propres, rejets, contrôles, thèmes, runs | interne à Docker (non exposée sur la machine) |
+| `mlflow` | Serveur MLflow (TD 5) : chaque run de thèmes, ses paramètres, métriques et artefacts | http://localhost:5000 |
 | `prefect` | Serveur Prefect : historique de chaque run, interface web | http://localhost:4200 |
-| `orchestrateur` | Notre code : le flow `collecte` (collecte, puis nettoyage, rapport, contrôles), planifié toutes les 10 minutes | - |
+| `orchestrateur` | Notre code : le flow `collecte` (collecte, puis nettoyage, rapport, contrôles, thèmes), planifié toutes les 10 minutes | - |
 
-Les trois redémarrent automatiquement (`restart: unless-stopped`), y compris après un redémarrage de Docker Desktop. Prefect peut être déclaré « unhealthy » au tout premier démarrage s'il est lent : relancez `docker compose up -d` une minute plus tard.
+Les quatre redémarrent automatiquement (`restart: unless-stopped`), y compris après un redémarrage de Docker Desktop. Prefect peut être déclaré « unhealthy » au tout premier démarrage s'il est lent : relancez `docker compose up -d` une minute plus tard.
 
 ## 3. Vérifier que ça marche
 
-**1. Les 3 conteneurs tournent :**
+**1. Les 4 conteneurs tournent :**
 ```bash
 docker compose ps
 ```
-`postgres` et `prefect` doivent être **healthy**, `orchestrateur` **Up**.
+`postgres`, `prefect` et `mlflow` doivent être **healthy**, `orchestrateur` **Up**.
 
 **2. Le flow est enregistré :**
 ```bash
@@ -129,7 +133,7 @@ docker compose exec orchestrateur prefect deployment run 'collecte/collecte-cont
 ```
 Puis, 30 secondes à 1 minute plus tard, `docker compose logs orchestrateur --tail 40` doit montrer : `Bilan du passage` (collecte), puis `Nettoyage :`, `Rapport de qualité :` et `Contrôles :`.
 
-**4. Dans l'interface :** http://localhost:4200 → **Runs**. Chaque passage apparaît, en vert s'il a réussi, avec 3 « Task runs » (nettoyage, rapport, contrôles). **Deployments** → `collecte-continue` montre la planification.
+**4. Dans l'interface :** http://localhost:4200 → **Runs**. Chaque passage apparaît, en vert s'il a réussi, avec 4 « Task runs » (nettoyage, rapport, contrôles, thèmes). **Deployments** → `collecte-continue` montre la planification.
 
 **5. Les articles sont rangés :** le dossier `data/articles_bruts/` contient un dossier par journal, et un fichier JSON par article.
 
@@ -138,7 +142,14 @@ Puis, 30 secondes à 1 minute plus tard, `docker compose logs orchestrateur --ta
 docker compose exec postgres psql -U gazette -d gazette -P pager=off -c "SELECT (SELECT count(*) FROM articles_propres) AS propres, (SELECT count(*) FROM rejets) AS rejets, (SELECT count(*) FROM controles_qualite) AS controles;"
 ```
 
-**7. Le rapport existe :** `rapports/qualite-AAAA-MM-JJ.md`.
+**7. Les thèmes (TD 5) :** lancer un run sans attendre, puis lire les thèmes et le run qui les a produits.
+```bash
+docker compose exec orchestrateur python -m gazette.themes --forcer
+docker compose exec postgres psql -U gazette -d gazette -P pager=off -c "SELECT run_id, nom, taille FROM themes_du_jour;"
+```
+Le premier run télécharge le modèle (quelques minutes). Puis http://localhost:5000 → expérience `gazette-themes` : le même run, avec ses paramètres, ses métriques et ses artefacts. Détail : [docs/mlops.md](docs/mlops.md).
+
+**8. Le rapport existe :** `rapports/qualite-AAAA-MM-JJ.md`.
 - PowerShell : `Get-Content -Encoding utf8 rapports\qualite-2026-10-22.md` (avec `cat`, les accents s'affichent mal : le fichier est correct, c'est le terminal)
 - Git Bash, Linux, Mac : `cat rapports/qualite-2026-10-22.md`
 
@@ -155,6 +166,10 @@ docker compose exec postgres psql -U gazette -d gazette -P pager=off -c "SELECT 
 | Rapport de qualité seul | `docker compose run --rm orchestrateur gazette.rapport_qualite` |
 | Contrôles seuls (et alerte) | `docker compose run --rm orchestrateur gazette.controles` |
 | Nettoyage + rapport + contrôles | `docker compose run --rm orchestrateur gazette.qualite` |
+| Un run de thèmes maintenant | `docker compose exec orchestrateur python -m gazette.themes --forcer` |
+| Les thèmes du jour | `docker compose exec postgres psql -U gazette -d gazette -P pager=off -c "SELECT run_id, nom, taille FROM themes_du_jour;"` |
+| Les derniers runs de thèmes | `docker compose exec postgres psql -U gazette -d gazette -P pager=off -c "SELECT run_id, statut, nb_articles, metriques->>'nb_themes' AS themes, fin FROM runs_themes ORDER BY debut DESC LIMIT 10;"` |
+| Régler le regroupement | modifier `config/clustering.yaml` (lu à chaque run, pas besoin de reconstruire) |
 | Compter les articles bruts (PowerShell) | `(Get-ChildItem data\articles_bruts -Recurse -Filter *.json).Count` |
 | Compter les articles bruts (Linux / Mac / Git Bash) | `find data/articles_bruts -name '*.json' \| wc -l` |
 | Retrouver le fichier brut d'un `item_id` (PowerShell) | `Get-ChildItem data\articles_bruts -Recurse -Filter <item_id>.json` |
@@ -273,7 +288,7 @@ Toujours supprimer la ligne de test ensuite.
 bin/test          # Windows PowerShell : .\bin\test.ps1
 ```
 
-Lance le lint (`ruff`) puis les tests (`pytest`) dans un conteneur, exactement comme la CI. Résultat attendu : `96 passed, 12 skipped` (le nombre augmente à chaque TD). Les 12 tests ignorés demandent une vraie base PostgreSQL : ils tournent dans la CI. Le lint limite les lignes à 100 caractères.
+Lance le lint (`ruff`) puis les tests (`pytest`) dans un conteneur, exactement comme la CI. Résultat attendu : `106 passed, 22 skipped` (le nombre augmente à chaque TD). Les 22 tests ignorés demandent une vraie base PostgreSQL : ils tournent dans la CI. Le lint limite les lignes à 100 caractères.
 
 Les tests clés :
 - TD 3 (`tests/test_collecteur.py`), contre un **faux serveur HTTP local** (aucun accès à Internet) : « deux passages, zéro doublon », « source en panne » (503 : 3 essais, attentes de 2 s puis 4 s, mise en sommeil), 404 sans réessai, ETag et 304, flux cassé, fréquence respectée, panne du réseau.
@@ -354,7 +369,9 @@ la-gazette/
 | `.env.example` | Modèle du `.env` (la ligne `DISCORD_WEBHOOK_URL=` sans valeur) | rarement |
 | `.env` | Votre secret local : l'adresse du webhook Discord. **Jamais commité, jamais partagé** | une fois par machine |
 | `pyproject.toml` | Configuration du paquet Python `gazette`, de `ruff` (lint, lignes de 100 caractères maximum) et de `pytest` (dossier `tests/`) | pour une option de lint ou de test |
-| `requirements.txt` | Dépendances de l'application (installées dans l'image). Les modifier relance toute l'installation Docker (longue) | pour ajouter une bibliothèque (TD 5 : embeddings, regroupement) |
+| `requirements.txt` | Dépendances de l'application (installées dans l'image), versions figées. torch vient de l'index CPU de PyTorch (ligne `--extra-index-url`). Les modifier relance toute l'installation Docker (longue) | pour ajouter une bibliothèque |
+| `config/clustering.yaml` | **Tous les paramètres des thèmes** (TD 5) : fenêtre, modèle, UMAP, HDBSCAN, nommage, graine, fréquence | pour régler le regroupement |
+| `docker/mlflow.Dockerfile` | L'image du serveur MLflow (version figée) | rarement |
 | `requirements-dev.txt` | Dépendances de développement : `pytest`, `ruff` | rarement |
 | `CONTRIBUTING.md` | Règles de travail : une branche par sujet, une pull request relue par quelqu'un d'autre, CI verte avant de fusionner | à lire une fois |
 | `bin/dev`, `bin/dev.ps1` | Raccourci pour `docker compose up --build -d` (Linux / Mac, puis PowerShell) | - |
@@ -388,6 +405,9 @@ la-gazette/
 | `alerte.py` | `envoyer_alerte()` : envoie un message au webhook Discord avec la bibliothèque standard. Ne plante jamais le pipeline ; ne montre jamais l'adresse dans les logs |
 | `connexion.py` | `ouvrir_connexion()` : ouvre la connexion PostgreSQL (variable `DATABASE_URL`) |
 | `qualite.py` | Enchaîne nettoyage, rapport et contrôles (`passage_qualite`) ; chaque étape reste appelable seule |
+| `embeddings.py` | TD 5 : lit les articles des dernières 24 h (`lire_articles`), les vectorise avec cache (`vectoriser`, table `embeddings`) ; le modèle est chargé à la première utilisation et sa version (commit Hugging Face) est notée |
+| `themes.py` | TD 5 : un run complet (`executer_run`) : empreinte de l'entrée, BERTopic (`regrouper`), noms (`nommer`), métriques (`calculer_metriques`), écriture de `themes`, `articles_themes`, `runs_themes`. Point d'entrée : `python -m gazette.themes [--forcer]` |
+| `suivi_runs.py` | TD 5 : envoi de chaque run à MLflow ; une panne de MLflow n'arrête jamais le run (`SuiviTolerant`) |
 
 **Thèmes (TD 5, prévu, noms indicatifs)** : voir section 13.
 
@@ -400,6 +420,7 @@ la-gazette/
 | `003_articles_propres.sql` | `articles_propres` : les articles gardés (couche Silver) |
 | `004_rejets.sql` | `rejets` : les articles écartés avec la règle et l'éventuel article conservé |
 | `005_controles_qualite.sql` | `controles_qualite` : le résultat de chaque contrôle |
+| `006_themes.sql` | TD 5 : `embeddings` (cache), `runs_themes` (un run = une ligne), `themes`, `articles_themes`, et la vue `themes_du_jour` (thèmes du dernier run réussi) |
 
 Règle : on n'**édite jamais** une migration déjà appliquée ; on en ajoute une nouvelle avec le numéro suivant (`006_...`). Si deux personnes créent le même numéro sur deux branches, renommer l'une avant de fusionner.
 
@@ -544,7 +565,16 @@ Ne jamais commiter : `.env`, `data/`, l'adresse d'un webhook, un mot de passe. U
 
 ### TD 5
 
-À compléter par la personne qui fait le TD 5 : modèle d'embedding, algorithme de regroupement, outil de suivi des runs, format du fichier de paramètres, nommage des thèmes. Pour chaque choix, deux alternatives écartées et la raison.
+| Besoin | Retenu | Écartés |
+|---|---|---|
+| Modèle d'embedding | **paraphrase-multilingual-MiniLM-L12-v2** : multilingue, léger, CPU | multilingual-e5-small (préfixe « query: » obligatoire) · API d'embeddings (clé, coût, données chez un tiers) |
+| Regroupement | **BERTopic** (UMAP + HDBSCAN), validé au cadrage | K-means (nombre de thèmes fixé à l'avance) · hiérarchique seul (seuil de coupe, pas de noms) |
+| Nommage | **Mots-clés c-TF-IDF** | LLM (non demandé, coût, non reproductible) · mots les plus fréquents (communs à tous les thèmes) |
+| Suivi des runs | **MLflow + table `runs_themes`** | table seule (pas d'interface ni d'artefacts) · W&B (en ligne) · DVC (compare moins bien les runs) |
+| Cache des vecteurs | **Table `embeddings`** | fichier .npy (à synchroniser avec la base) · pgvector (inutile sans recherche de voisins) |
+| Paramètres | **YAML** (`config/clustering.yaml`) | TOML (PyYAML déjà présent avec MLflow) · variables d'environnement (illisibles) |
+
+Détail et arguments : [docs/mlops.md](docs/mlops.md).
 
 Les autres choix (supervision, infrastructure en code...) sont argumentés dans le [cadrage](docs/cadrage.md).
 
@@ -554,51 +584,18 @@ Les autres choix (supervision, infrastructure en code...) sont argumentés dans 
 - les alertes partent **directement du pipeline vers Discord** ; Healthchecks.io, UptimeRobot, Prometheus, Grafana et Alertmanager sont prévus au TD 8 ;
 - couches : Bronze = fichiers JSON, Silver = `articles_propres`, Gold = thèmes (TD 5).
 
-## 13. TD 5 : thèmes (à compléter au fil du TD)
+## 13. TD 5 : thèmes
 
-### 13.1 Ce qui est prêt pour le TD 5
+Tout est expliqué dans [docs/mlops.md](docs/mlops.md) : modèle, paramètres, ce que trace chaque run, où le lire.
 
-- Des articles propres dans `articles_propres`. Les articles des dernières 24 h se lisent avec :
-  ```sql
-  SELECT item_id, source, titre, extrait, publie_le
-  FROM articles_propres
-  WHERE publie_le >= now() - interval '24 hours'
-  ORDER BY publie_le;
-  ```
-  (`date_estimee = true` signale une date remplacée par l'heure de collecte.)
-- Un modèle de module à imiter : fonctions pures, point d'entrée `python -m gazette.<module>`, connexion par `gazette.connexion.ouvrir_connexion()`, logs JSON, tests dans `tests/`.
-- Un modèle de branchement dans Prefect : `src/gazette/orchestration.py`. Le TD 5 ajoute sa tâche **après le nettoyage**, pas à la main.
-- Les migrations suivent la numérotation : la prochaine est `006_...sql`.
+En bref : la tâche Prefect `themes` vient après le nettoyage, au plus une fois par heure. Elle vectorise titre + extrait des articles propres des dernières 24 h (cache dans `embeddings`), regroupe avec BERTopic, nomme chaque thème par ses mots-clés, écrit `themes` et `articles_themes`, et trace le run dans `runs_themes` et dans MLflow (http://localhost:5000). Les thèmes en base portent le `run_id` qui les a produits ; la vue `themes_du_jour` donne ceux du dernier run réussi.
 
-### 13.2 Ce qui est demandé
+**Pour la prochaine séance (TD 6)** : laisser tourner pour garder les runs ; relire à la main les thèmes de deux journées et noter dans `docs/mlops.md` (section 7) ce qui est bon, ce qui est absurde, et une hypothèse.
 
-1. **Embeddings** (titre + extrait des dernières 24 h) avec **cache** (table `embeddings` ou fichier), et un test sur dix articles.
-2. **Regroupement et nommage**, paramètres dans `config/clustering.yaml`, stockage dans `themes` (`run_id, nom, mots_cles, taille`) et `articles_themes`.
-3. **Traçage de chaque run** : fenêtre de données (dates, nombre d'articles, hash de l'entrée), modèle d'embedding et sa version, paramètres, métriques (nombre de thèmes, taille médiane, part de bruit, silhouette), artefacts (thèmes nommés, affectations). Avec un outil de suivi (MLflow) ou une table `runs`.
-4. **`docs/mlops.md`** : modèles, paramètres, où lire les runs.
-
-### 13.3 Fichiers prévus (noms indicatifs, à confirmer)
-
-| Fichier | Rôle |
-|---|---|
-| `src/gazette/embeddings.py` | calcule et met en cache les vecteurs des articles |
-| `src/gazette/themes.py` | regroupe, nomme les thèmes, écrit `themes` et `articles_themes` |
-| `src/gazette/suivi_runs.py` | trace chaque run (outil ou table `runs`) |
-| `config/clustering.yaml` | paramètres du regroupement |
-| `src/gazette/migrations/006_...sql` | tables `themes`, `articles_themes`, `runs`, `embeddings` |
-| `tests/test_embeddings.py`, `tests/test_themes.py` | tests des modules ci-dessus |
-| `docs/mlops.md` | où lire les runs et comment les relire |
-
-### 13.4 Points d'attention techniques
-
-- **Dépendances lourdes** (embeddings, regroupement) : plusieurs centaines de Mo et plusieurs minutes de construction. Lancer la reconstruction de l'image **tôt**, PC éveillé.
-- **Compatibilité à vérifier** : l'image utilise Python 3.13. Vérifier que les versions de torch, numba/umap-learn et hdbscan sont compatibles avant de s'engager.
-- **Cache du modèle** : prévoir un volume Docker, sinon il est retéléchargé à chaque reconstruction.
-- **Figer les versions** dans `requirements.txt` et noter la version du modèle dans chaque run.
-- **Reproductibilité** : fixer les graines aléatoires et calculer un hash de l'entrée.
-- **Format des paramètres** : `config/clustering.yaml` demande PyYAML (une dépendance de plus) ; TOML est lisible sans dépendance en Python 3.11+. À trancher et justifier.
-- **Une tâche qui échoue ne doit pas casser la collecte** : le flow a une relance automatique, la tâche doit être rejouable.
-- `rejets.doublon_de` permet de compter combien de journaux reprennent un sujet, si cela sert au nommage ou à l'évaluation.
+**Points d'attention :**
+- Un `git pull` qui touche `requirements.txt` relance une longue construction : la lancer tôt, PC éveillé.
+- Si `torch==2.14.1+cpu` n'est pas trouvé à la construction, la version n'existe pas encore sur l'index CPU : prendre la dernière version listée sur https://download.pytorch.org/whl/cpu/torch/ et la noter ici.
+- Le port 5000 est pris sur certains Mac (AirPlay) : changer `"5000:5000"` en `"5001:5000"` dans `docker-compose.yml`.
 
 ## Contribuer
 

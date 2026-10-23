@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from gazette.collecteur import executer_passage
-from gazette.migrations import appliquer_migrations
+from gazette.migrations import appliquer_migrations, fichiers_migration
 from gazette.registre import RegistrePostgres, Source, lire_sources_csv
 
 URL = os.environ.get("GAZETTE_TEST_DATABASE_URL")
@@ -32,7 +32,9 @@ def conn():
 
 
 def test_migrations_rejouables(conn):
-    assert appliquer_migrations(conn) == ["001_sources", "002_collectes"]
+    toutes = [version for version, _ in fichiers_migration()]
+    assert toutes[:2] == ["001_sources", "002_collectes"]
+    assert appliquer_migrations(conn) == toutes
     assert appliquer_migrations(conn) == []  # relancer ne refait rien
 
 

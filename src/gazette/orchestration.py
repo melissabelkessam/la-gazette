@@ -3,18 +3,19 @@
 Un passage toutes les 10 minutes : chaque source n'est collectée que si elle est due
 (Ouest-France toutes les 10 min, les autres toutes les 60 min : colonne frequence_min).
 Après la collecte (TD 4) : nettoyage, rapport de qualité, contrôles et alerte.
+Puis (TD 5) : les thèmes des dernières 24 h, au plus une fois par heure (config/clustering.yaml).
 Lancé par le service « orchestrateur » de docker-compose : python -m gazette.orchestration
 
 Le pipeline n'est pas Prefect : chaque étape est une fonction ordinaire, appelable à la
 main (python -m gazette.collecteur, gazette.nettoyage, gazette.rapport_qualite,
-gazette.controles, ou gazette.qualite pour les trois à la suite).
+gazette.controles, ou gazette.qualite pour les trois à la suite, gazette.themes).
 """
 
 from __future__ import annotations
 
 from prefect import flow, get_run_logger, task
 
-from gazette import qualite
+from gazette import qualite, themes
 from gazette.collecteur import configurer_journaux, passage_complet
 
 INTERVALLE_SECONDES = 600
@@ -44,9 +45,17 @@ def tache_controles() -> dict:
     return bilan
 
 
+@task(name="themes", retries=1, retry_delay_seconds=120)
+def tache_themes() -> dict:
+    """Thèmes des dernières 24 h ; chaque run est tracé (runs_themes + MLflow)."""
+    resume = themes.etape_themes()
+    get_run_logger().info("Thèmes : %s", resume)
+    return resume
+
+
 @flow(name="collecte", retries=1, retry_delay_seconds=60)
 def flow_collecte() -> dict:
-    """Un passage : collecte, puis nettoyage, rapport et contrôles de qualité.
+    """Un passage : collecte, nettoyage, rapport, contrôles, puis thèmes (TD 5).
 
     Le détail par source est dans les journaux et la table collectes. Si la qualité
     échoue (base inaccessible par exemple), Prefect relance le flow une fois : la
@@ -57,6 +66,9 @@ def flow_collecte() -> dict:
     tache_nettoyage()
     tache_rapport()
     tache_controles()
+    # Les thèmes viennent après le nettoyage : collecte et qualité sont déjà écrites
+    # si cette étape échoue. Le flow passe alors en rouge dans Prefect (visible).
+    tache_themes()
     return bilan
 
 

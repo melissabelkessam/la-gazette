@@ -1,5 +1,16 @@
+# torch en version CPU : évite plusieurs Go de bibliothèques CUDA inutiles ici.
+--extra-index-url https://download.pytorch.org/whl/cpu
 httpx==0.28.1
 feedparser==6.0.14
 psycopg[binary]==3.2.13
 prefect==3.4.25
 importlib-metadata==8.7.0
+# TD 5 : thèmes (embeddings, BERTopic) et suivi des runs (MLflow)
+torch==2.14.1+cpu
+sentence-transformers==6.2.0
+bertopic==0.17.4
+umap-learn==0.5.12
+hdbscan==0.8.44
+scikit-learn==1.9.1
+mlflow-skinny==3.17.2
+pyyaml==6.0.3
