@@ -38,6 +38,7 @@ from gazette.embeddings import (
     texte_article,
     vectoriser,
 )
+from gazette.migrations import appliquer_migrations
 from gazette.suivi_runs import SuiviNul, suivi_depuis_environnement
 
 logger = logging.getLogger("gazette.themes")
@@ -321,6 +322,7 @@ def etape_themes(forcer: bool = False, maintenant: datetime | None = None) -> di
     intervalle = int(config.get("planification", {}).get("intervalle_min", 60))
     conn = ouvrir_connexion()
     conn.autocommit = True
+    appliquer_migrations(conn)  # base neuve : crée les tables avant de les lire
     try:
         conn.execute("SELECT pg_advisory_lock(%s)", (VERROU,))
         try:
