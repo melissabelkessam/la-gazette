@@ -69,7 +69,14 @@ class EncodeurSentenceTransformers:
             from huggingface_hub import snapshot_download
             from sentence_transformers import SentenceTransformer
 
-            chemin = snapshot_download(self.nom, revision=self.revision)
+                        # Seuls les poids PyTorch et les fichiers du tokenizer : pas les variantes
+            # ONNX, OpenVINO ni TensorFlow du dépôt (plusieurs Go inutiles).
+            chemin = snapshot_download(
+                self.nom,
+                revision=self.revision,
+                ignore_patterns=["onnx/*", "openvino/*", "*.h5", "*.msgpack", "*.ot",
+                                 "pytorch_model.bin"],
+            )
             self._version = Path(chemin).name
             self._modele = SentenceTransformer(chemin, device="cpu")
         return self._modele
