@@ -108,3 +108,56 @@ est absurde, une hypothèse sur pourquoi.
 |---|---|---|---|---|---|
 | _à remplir_ | | | | | |
 | _à remplir_ | | | | | |
+
+
+## 8. Évaluation automatique du run (TD 6)
+
+Un regroupement qui tourne tous les jours n'est bon que si quelque chose le vérifie. Après le regroupement et **avant d'écrire les thèmes en base**, le pipeline évalue le run (`gazette.evaluation`), à partir des seuils de `config/evaluation.yaml`.
+
+Trois verdicts, enregistrés sur le run (table `evaluations_themes`) :
+
+| Verdict | Quand | Effet |
+|---|---|---|
+| `ok` | tous les seuils respectés | les thèmes sont publiés |
+| `recale` | un garde-fou dur franchi | **thèmes NON publiés** ; `themes_du_jour` reste le dernier bon run ; alerte Discord |
+| `revue` | dérive (seuil « mou » franchi 2 runs de suite) | publié, mais alerte Discord : l'équipe doit regarder |
+
+Garde-fous durs (recale) : `nb_themes_min`, `part_bruit_max`, `theme_geant_max` (aucun thème ne dépasse X % des articles), `silhouette_min`. La dérive compare le run aux runs OK précédents (`part_bruit_surveillee`, `silhouette_surveillee`).
+
+Relecture humaine d'un échantillon (10 articles), enregistrée dans `relectures` :
+
+```
+python -m gazette.evaluation --relire <run_id> --par <nom>
+```
+
+## 9. Registre de versions, promotion et retour arrière (TD 6)
+
+Une **version** = un jeu de paramètres (le contenu de `config/clustering.yaml`). Le registre (`gazette.registre_modele`, table `versions_modele`) dit laquelle est **en production** ; le pipeline lit ses paramètres au démarrage (plus rien n'est codé en dur).
+
+« Quelle version tourne ce matin, et avec quels paramètres ? » :
+
+```
+python -m gazette.registre_modele --en-service
+docker compose exec postgres psql -U gazette -d gazette -c "SELECT version, promue_le, par_qui FROM version_en_service;"
+```
+
+**Le circuit de promotion (par la CI)**
+
+1. Changer un paramètre de `config/clustering.yaml` = une **PR**.
+2. La CI rejoue l'évaluation du modèle (workflow `Promotion du modele` + CI principale). Si le modèle ne passe plus, la PR est rouge → le merge est bloqué.
+3. **Au merge**, la nouvelle version est **promue**. Comme le registre vit sur la machine de production (celle qui porte la base), la promotion s'exécute là :
+
+```
+   python -m gazette.registre_modele --enregistrer --par <nom>
+   python -m gazette.registre_modele --promouvoir <vN> --par <nom>
+```
+
+   La CI rappelle ces commandes après le merge ; elle n'a pas accès à la base de prod.
+
+**Le retour arrière** — revenir à la version précédente, une commande, tracée :
+
+```
+python -m gazette.registre_modele --retour-arriere --par <nom>
+```
+
+Exécuté le _<à remplir après le test>_ (voir `docs/journal.md`).
