@@ -160,4 +160,4 @@ docker compose exec postgres psql -U gazette -d gazette -c "SELECT version, prom
 python -m gazette.registre_modele --retour-arriere --par <nom>
 ```
 
-Exécuté le _<à remplir après le test>_ (voir `docs/journal.md`).
+Exécuté le 25/11/2026 (v2 promue puis annulee, retour a v1) (voir `docs/journal.md`).
