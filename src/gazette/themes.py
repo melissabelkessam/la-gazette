@@ -8,7 +8,8 @@ Un run :
 1. lit les articles propres de la fenêtre (24 h) et calcule l'empreinte de l'entrée ;
 2. ouvre une ligne dans ``runs_themes`` (statut en_cours) et un run MLflow ;
 3. vectorise (cache), regroupe, nomme, calcule les métriques ;
-4. écrit ``themes`` et ``articles_themes`` puis ferme le run (ok, ou echec avec l'erreur).
+4. ÉVALUE le run (TD 6) : un run recalé n'écrit pas ses thèmes en base ;
+5. écrit ``themes`` et ``articles_themes`` (si publié) puis ferme le run.
 
 Tous les paramètres viennent de ``config/clustering.yaml``. Lançable sans Prefect :
 ``python -m gazette.themes`` (respecte l'intervalle) ou ``python -m gazette.themes --forcer``.
@@ -30,6 +31,8 @@ from typing import Sequence
 import numpy as np
 import yaml
 
+from gazette import evaluation
+from gazette.alerte import envoyer_alerte
 from gazette.embeddings import (
     Article,
     Encodeur,
@@ -211,12 +214,30 @@ def _journaliser(evenement: dict, niveau: int = logging.INFO) -> None:
     logger.log(niveau, json.dumps(evenement, ensure_ascii=False, default=str))
 
 
+def _alerter_verdict(run_id: str, resultat_eval: dict, metriques: dict, envoyer) -> None:
+    """Alerte Discord quand un run est recalé (non publié) ou à revoir (dérive)."""
+    if resultat_eval["verdict"] == evaluation.VERDICT_RECALE:
+        titre = "Run de themes RECALE — themes NON publies"
+        details = resultat_eval["details"]["franchissements"]
+    else:
+        titre = "Run de themes a REVOIR — derive detectee"
+        details = resultat_eval["details"]["raisons_derive"]
+    envoyer(
+        f"{titre}\nrun {run_id}\n"
+        f"nb_themes={metriques.get('nb_themes')}, part_bruit={metriques.get('part_bruit')}, "
+        f"silhouette={metriques.get('silhouette')}\n"
+        f"detail : {json.dumps(details, ensure_ascii=False)}"
+    )
+
+
 def executer_run(
     conn,
     maintenant: datetime | None = None,
     encodeur: Encodeur | None = None,
     config: dict | None = None,
     suivi: SuiviNul | None = None,
+    config_eval: dict | None = None,
+    envoyer=envoyer_alerte,
 ) -> dict:
     """Un run complet. ``conn`` doit être en autocommit. Renvoie le résumé du run."""
     maintenant = maintenant or datetime.now(timezone.utc)
@@ -226,6 +247,7 @@ def executer_run(
         emb["modele"], emb["revision"], int(emb["taille_lot"])
     )
     suivi = suivi or suivi_depuis_environnement()
+    config_eval = config_eval or evaluation.charger_config()
     debut_chrono = time.monotonic()
 
     heures = int(config["donnees"]["fenetre_heures"])
@@ -258,6 +280,7 @@ def executer_run(
 
     resume = {"run_id": run_id, "nb_articles": len(articles), "hash_entree": hash_entree}
     try:
+        resultat_eval = None
         if len(articles) < int(config["donnees"]["min_articles"]):
             statut, metriques, themes, etiquettes = "trop_peu_articles", {
                 "nb_articles": len(articles)}, [], []
@@ -268,35 +291,47 @@ def executer_run(
             metriques = {**calculer_metriques(etiquettes, vecteurs),
                          "vecteurs_en_cache": bilan_cache["en_cache"],
                          "vecteurs_calcules": bilan_cache["calcules"]}
-            statut = "ok"
+            # TD 6 : on juge le run AVANT de publier. Un run recalé n'écrit pas ses thèmes.
+            historique = evaluation.metriques_runs_ok_precedents(
+                conn, maintenant, int(config_eval["derive"]["fenetre_runs"]))
+            resultat_eval = evaluation.evaluer(metriques, historique, config_eval)
+            metriques["verdict"] = resultat_eval["verdict"]
+            statut = "ok" if resultat_eval["publie"] else "recale"
 
         metriques["duree_s"] = round(time.monotonic() - debut_chrono, 2)
+        publie = statut == "ok"
         affectations = [
             {"item_id": a.item_id, "source": a.source, "theme": e}
             for a, e in zip(articles, etiquettes)
         ]
         with conn.transaction():
             with conn.cursor() as cur:
-                cur.executemany(
-                    "INSERT INTO themes (run_id, theme, nom, mots_cles, taille) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    [(run_id, t["theme"], t["nom"], t["mots_cles"], t["taille"])
-                     for t in themes],
-                )
-                cur.executemany(
-                    "INSERT INTO articles_themes (run_id, theme, item_id) VALUES (%s, %s, %s)",
-                    [(run_id, x["theme"], x["item_id"]) for x in affectations
-                     if x["theme"] != BRUIT],
-                )
+                if publie:  # un run recalé ne touche pas aux thèmes en base (TD 6)
+                    cur.executemany(
+                        "INSERT INTO themes (run_id, theme, nom, mots_cles, taille) "
+                        "VALUES (%s, %s, %s, %s, %s)",
+                        [(run_id, t["theme"], t["nom"], t["mots_cles"], t["taille"])
+                         for t in themes],
+                    )
+                    cur.executemany(
+                        "INSERT INTO articles_themes (run_id, theme, item_id) "
+                        "VALUES (%s, %s, %s)",
+                        [(run_id, x["theme"], x["item_id"]) for x in affectations
+                         if x["theme"] != BRUIT],
+                    )
                 cur.execute(
                     "UPDATE runs_themes SET statut = %s, fin = now(), metriques = %s, "
                     "mlflow_run_id = %s WHERE run_id = %s",
                     (statut, json.dumps(metriques), suivi.mlflow_run_id, run_id),
                 )
+            if resultat_eval is not None:
+                evaluation.enregistrer_evaluation(conn, run_id, resultat_eval)
         suivi.metriques(metriques)
         suivi.artefact_json(themes, "themes.json")
         suivi.artefact_json(affectations, "affectations.json")
         suivi.terminer(statut)
+        if resultat_eval is not None and resultat_eval["verdict"] != evaluation.VERDICT_OK:
+            _alerter_verdict(run_id, resultat_eval, metriques, envoyer)
         resume.update(statut=statut, mlflow_run_id=suivi.mlflow_run_id, **metriques)
         _journaliser({"evenement": "run_themes", **resume})
         return resume
