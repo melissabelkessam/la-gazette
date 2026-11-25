@@ -1,0 +1,72 @@
+# Promotion du modèle de regroupement (TD 6).
+#
+# Le circuit : changer un paramètre du modèle (config/clustering.yaml) = une PR.
+#  - Sur la PR : la CI REJOUE l'évaluation du modèle (regroupement, seuils, registre).
+#    Si le modèle ne passe plus, la PR est rouge et le merge est bloqué.
+#  - Au merge sur main : la CI rappelle la commande de PROMOTION à lancer sur la machine
+#    de production (celle qui fait tourner le pipeline et porte la base), car c'est là que
+#    vit le registre — la CI n'a pas accès à cette base.
+#
+# Le retour arrière utilise la même commande (voir docs/mlops.md).
+
+name: Promotion du modele
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [config/clustering.yaml, config/evaluation.yaml]
+  push:
+    branches: [main]
+    paths: [config/clustering.yaml, config/evaluation.yaml]
+
+permissions:
+  contents: read
+
+jobs:
+  evaluer:
+    # Garde-fou : un changement de paramètres rejoue l'évaluation du modèle sur un échantillon.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gazette_test
+          POSTGRES_USER: gazette
+          POSTGRES_PASSWORD: gazette_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gazette -d gazette_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      GAZETTE_TEST_DATABASE_URL: postgresql://gazette:gazette_test@localhost:5432/gazette_test
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Installer les dépendances
+        run: pip install -r requirements-dev.txt
+      - name: Évaluer le modèle (regroupement, seuils, registre)
+        run: pytest tests/test_themes.py tests/test_evaluation.py tests/test_registre_modele.py -v
+
+  rappel-promotion:
+    # Au merge : la promotion s'exécute sur la machine de prod (la CI n'a pas sa base).
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rappel de la promotion à exécuter sur la machine de production
+        run: |
+          echo "Les paramètres du modèle ont changé sur main."
+          echo "Sur la machine qui fait tourner le pipeline (elle porte la base de prod) :"
+          echo "  python -m gazette.registre_modele --enregistrer --par <nom>"
+          echo "  python -m gazette.registre_modele --promouvoir <vN> --par <nom>"
+          echo "Retour arriere si besoin :"
+          echo "  python -m gazette.registre_modele --retour-arriere --par <nom>"

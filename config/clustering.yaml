@@ -1,0 +1,38 @@
+# Paramètres du regroupement en thèmes (TD 5).
+# Ce fichier est la seule source des paramètres : il est lu à chaque run, recopié tel quel
+# dans MLflow (artefact config_clustering.yaml) et son empreinte est notée dans la table
+# runs_themes. Modifier une valeur = un nouveau run, comparable aux précédents.
+# Monté en lecture seule dans le conteneur : pas besoin de reconstruire l'image.
+
+donnees:
+  fenetre_heures: 24        # articles propres publiés dans les dernières 24 h
+  min_articles: 30          # en dessous, le run est noté "trop_peu_articles" et ne regroupe pas
+
+embeddings:
+  modele: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  revision: main            # figer un commit Hugging Face ici pour une version immuable
+  taille_lot: 64
+
+reduction:                  # UMAP : 384 dimensions -> 5, avant HDBSCAN
+  n_neighbors: 15
+  n_components: 5
+  min_dist: 0.0
+  metric: cosine
+
+regroupement:               # HDBSCAN : trouve seul le nombre de thèmes, met le bruit à part
+  min_cluster_size: 5       # un thème = au moins 5 articles
+  min_samples: 3
+  metric: euclidean
+  cluster_selection_method: eom
+
+nommage:                    # c-TF-IDF (BERTopic) : mots les plus discriminants du thème
+  ngram_min: 1
+  ngram_max: 2
+  min_df: 1                 # appliqué aux thèmes (pas aux articles) : 1 garde les mots propres à un seul thème
+  mots_par_theme: 10        # mots-clés stockés
+  mots_dans_le_nom: 3       # le nom du thème = les 3 premiers mots-clés
+
+graine: 42                  # UMAP et numpy : deux runs sur les mêmes données = mêmes thèmes
+
+planification:
+  intervalle_min: 60        # le flow passe toutes les 10 min ; les thèmes au plus une fois par heure

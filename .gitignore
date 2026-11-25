@@ -5,8 +5,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Données collectées : jamais dans le dépôt (projet non publié)
+# Données collectées et rapports (titres de presse réels) : jamais dans le dépôt
 data/
+rapports/
+mlruns/
+
+# Secrets : le vrai fichier reste sur la machine, seul .env.example est commité
+.env
 
 # Fichiers système
 .DS_Store

@@ -1,6 +1,7 @@
-"""Collecte d'une source RSS : téléchargement, lecture et écriture en JSON.
+"""Lecture d'un flux RSS ou Atom : ne garde que ce que le bornage autorise.
 
-Usage : python -m gazette.collecte --source "Sud Ouest"
+Outil manuel pour tester une source : python -m gazette.collecte --source "Sud Ouest"
+La collecte planifiée de toutes les sources est dans gazette.collecteur.
 """
 
 from __future__ import annotations
@@ -71,31 +72,65 @@ def extrait_autorise(entree: dict) -> str | None:
     return nettoyer_texte(resume)
 
 
+# Champs bruts gardés dans le payload, tels que reçus (RSS 2.0 ou Atom).
+# Liste blanche : auteur, texte intégral (content) et images n'y sont jamais.
+CHAMPS_PAYLOAD = ("title", "link", "id", "summary", "published", "updated")
+
+
+def payload_autorise(entree: dict) -> dict:
+    """L'item tel que reçu, réduit aux seuls champs autorisés par le bornage."""
+    # dict.get : lit le champ tel quel, sans les correspondances automatiques de feedparser
+    payload = {cle: dict.get(entree, cle) for cle in CHAMPS_PAYLOAD if dict.get(entree, cle)}
+    if payload.get("summary") and extrait_autorise(entree) is None:
+        # le résumé n'est en fait que le texte intégral : on ne le garde pas
+        del payload["summary"]
+    rubriques = [t.get("term") for t in entree.get("tags", []) if t.get("term")]
+    if rubriques:
+        payload["tags"] = rubriques
+    return payload
+
+
+def lire_entrees(contenu: bytes, source: str) -> tuple[list[tuple[dict, dict]], bool]:
+    """Lit un flux et renvoie ([(article, payload), ...], flux_illisible).
+
+    flux_illisible est vrai quand feedparser n'a rien pu lire de valable :
+    réponse qui n'est pas du XML, flux cassé, page d'erreur HTML...
+    """
+    flux = feedparser.parse(contenu)
+    resultats = []
+    for entree in flux.entries:
+        article = article_autorise(entree, source)
+        if article is not None:
+            resultats.append((article, payload_autorise(entree)))
+    illisible = not flux.entries and (bool(flux.bozo) or not flux.get("version"))
+    return resultats, illisible
+
+
 def parser_flux(contenu: bytes, source: str) -> list[dict]:
     """Lit un flux RSS et ne garde QUE les champs autorisés par le bornage.
 
     Tout le reste (auteur, texte intégral, images...) est ignoré par construction.
     """
-    flux = feedparser.parse(contenu)
-    articles = []
-    for entree in flux.entries:
-        lien_brut = entree.get("link") or entree.get("id")
-        if not lien_brut:
-            continue
-        lien = normaliser_lien(lien_brut)
-        rubriques = [t.get("term") for t in entree.get("tags", []) if t.get("term")]
-        articles.append(
-            {
-                "item_id": calculer_item_id(lien),
-                "source": source,
-                "titre": nettoyer_texte(entree.get("title")),
-                "extrait": extrait_autorise(entree),
-                "lien": lien,
-                "date_publication": date_en_utc(entree),
-                "rubrique": rubriques[0] if rubriques else None,
-            }
-        )
-    return articles
+    articles, _ = lire_entrees(contenu, source)
+    return [article for article, _ in articles]
+
+
+def article_autorise(entree: dict, source: str) -> dict | None:
+    """Un article normalisé, ou None s'il n'a ni lien ni identifiant."""
+    lien_brut = entree.get("link") or entree.get("id")
+    if not lien_brut:
+        return None
+    lien = normaliser_lien(lien_brut)
+    rubriques = [t.get("term") for t in entree.get("tags", []) if t.get("term")]
+    return {
+        "item_id": calculer_item_id(lien),
+        "source": source,
+        "titre": nettoyer_texte(entree.get("title")),
+        "extrait": extrait_autorise(entree),
+        "lien": lien,
+        "date_publication": date_en_utc(entree),
+        "rubrique": rubriques[0] if rubriques else None,
+    }
 
 
 def telecharger(url: str) -> bytes:

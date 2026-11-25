@@ -1,0 +1,31 @@
+# Évaluation automatique du regroupement (TD 6).
+#
+# Lu à CHAQUE run, juste après le regroupement et AVANT l'écriture des thèmes en base.
+# Les seuils décident du verdict du run :
+#   - tous les seuils respectés      -> verdict "ok"     : les thèmes sont publiés
+#   - au moins un seuil dépassé      -> verdict "recale" : les thèmes NE sont PAS publiés
+#   - un seuil "mou" franchi 2 runs de suite -> verdict "revue" : publié, mais l'équipe est alertée
+#
+# Modifier une valeur ici = une PR. La CI rejoue l'évaluation sur les données d'hier
+# et le merge promeut la nouvelle version (voir docs/mlops.md).
+
+# --- Garde-fous durs : un run qui en franchit un est RECALÉ (thèmes non publiés) -------
+seuils:
+  nb_themes_min: 3          # moins de 3 thèmes : le regroupement n'a rien séparé d'utile
+  part_bruit_max: 0.80      # garde-fou du sujet : jamais 80 % des articles en bruit
+  theme_geant_max: 0.50     # aucun thème ne dépasse 50 % des articles (sinon "fourre-tout")
+  silhouette_min: 0.05      # cohésion minimale (notre 1er run réel était à 0,10)
+
+# --- Relecture humaine : un échantillon tiré au hasard, noté à la main -----------------
+# Commande : python -m gazette.evaluation --relire <run_id>
+echantillon:
+  taille: 10                # 10 articles tirés parmi les thèmes du run
+  part_correcte_min: 0.70   # au moins 7/10 bien placés, sinon le run est signalé
+
+# --- Dérive : seuils "mous". Franchis sur 2 runs OK de suite -> verdict "revue" --------
+# La presse change de sujets tous les jours ; les métriques bougent. On ne recale pas,
+# mais on demande une revue humaine quand la qualité se dégrade durablement.
+derive:
+  fenetre_runs: 2               # nombre de runs OK consécutifs observés
+  part_bruit_surveillee: 0.50   # part_bruit > 0,50 sur 2 runs de suite -> revue
+  silhouette_surveillee: 0.07   # silhouette < 0,07 sur 2 runs de suite -> revue
