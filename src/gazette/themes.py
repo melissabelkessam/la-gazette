@@ -350,14 +350,19 @@ def executer_run(
 
 def etape_themes(forcer: bool = False, maintenant: datetime | None = None) -> dict:
     """Point d'entrée du pipeline : un run si le dernier date de plus de l'intervalle."""
+    from gazette import registre_modele
     from gazette.connexion import ouvrir_connexion
 
     maintenant = maintenant or datetime.now(timezone.utc)
     config = charger_config()
-    intervalle = int(config.get("planification", {}).get("intervalle_min", 60))
     conn = ouvrir_connexion()
     conn.autocommit = True
     appliquer_migrations(conn)  # base neuve : crée les tables avant de les lire
+    # TD 6 : les paramètres viennent de la version en service (production), pas du fichier.
+    # Au tout premier run, le registre est vide : config_en_service enregistre le fichier
+    # comme v1 production (bootstrap), puis c'est elle qui fait foi.
+    config = registre_modele.config_en_service(conn, config)
+    intervalle = int(config.get("planification", {}).get("intervalle_min", 60))
     try:
         conn.execute("SELECT pg_advisory_lock(%s)", (VERROU,))
         try:
